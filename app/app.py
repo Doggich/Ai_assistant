@@ -10,19 +10,16 @@ import os
 class VoiceAssistantApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Голосовой ассистент")
-        self.root.geometry("600x350")
-        self.root.resizable(False, False)
+        self.root.title("Lumi")
+        self.root.geometry("700x500")  # Увеличен размер окна
+        self.root.resizable(True, True)  # Разрешаем изменение размера
 
         self.BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-        theme_path = os.path.join(self.BASE_DIR, "theme", "app_theme.json")
-        ctk.set_default_color_theme(theme_path)
 
         self.conversation = Conversation()
         self.recognizer = sr.Recognizer()
         self.is_listening = False
-        self.voice_enabled = ctk.BooleanVar(value=True)
+        self.voice_enabled = ctk.BooleanVar(value=False)
         self.speech = SpeechSynthesizer(self.update_status)
 
         ctk.set_appearance_mode("Dark")
@@ -33,11 +30,12 @@ class VoiceAssistantApp:
         self.create_context_menu()
 
     def create_widgets(self):
+        # Настройка сетки
         self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_rowconfigure(4, weight=1)
+        self.root.grid_rowconfigure(1, weight=1)  # Основное пространство для чата
 
         control_frame = ctk.CTkFrame(self.root)
-        control_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        control_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew", columnspan=2)
 
         self.btn_listen = ctk.CTkButton(
             control_frame,
@@ -62,18 +60,16 @@ class VoiceAssistantApp:
         self.voice_check.pack(side="right", padx=5)
 
         input_frame = ctk.CTkFrame(self.root)
-        input_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
+        input_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew", columnspan=2)
 
         self.text_input = ctk.CTkEntry(
             input_frame,
             placeholder_text="Введите сообщение..."
         )
-
         self.text_input._entry.configure(
             selectbackground="#638C6D",
             selectforeground="white"
         )
-
         self.text_input.pack(side="left", fill="x", expand=True, padx=5)
         self.text_input.bind("<Return>", lambda event: self.send_text())
         self.text_input._entry.bind("<Button-3>", self.show_context_menu)
@@ -91,15 +87,34 @@ class VoiceAssistantApp:
         )
         self.btn_send.pack(side="left", padx=5)
 
+        # Фрейм для чата и скроллбара
+        chat_frame = ctk.CTkFrame(self.root)
+        chat_frame.grid(row=1, column=0, padx=(10, 0), pady=5, sticky="nsew")
+        chat_frame.grid_columnconfigure(0, weight=1)
+        chat_frame.grid_rowconfigure(0, weight=1)
+
+        # Текстовое поле чата
         self.dialogue_area = ctk.CTkTextbox(
-            self.root,
+            chat_frame,
             wrap="word",
-            font=("Arial", 12),
-            activate_scrollbars=True,
+            font=("Consolas", 14),
+            activate_scrollbars=False,  # Отключаем встроенные скроллбары
             state="disabled"
         )
-        self.dialogue_area.grid(row=2, column=0, padx=10, pady=5, sticky="nsew")
+        self.dialogue_area.grid(row=0, column=0, sticky="nsew")
 
+        # Вертикальный скроллбар
+        self.scrollbar = ctk.CTkScrollbar(
+            chat_frame,
+            orientation="vertical",
+            command=self.dialogue_area.yview
+        )
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # Связываем текстовое поле и скроллбар
+        self.dialogue_area.configure(yscrollcommand=self.scrollbar.set)
+
+        # Настройка цвета выделения текста
         text_widget = self.dialogue_area._textbox
         text_widget.configure(
             exportselection=1,
@@ -107,22 +122,33 @@ class VoiceAssistantApp:
             inactiveselectbackground="#638C6D"
         )
 
-        text_widget.bind("<Control-c>", self.copy_text)
+        # Привязка колесика мыши к прокрутке
+        text_widget.bind("<MouseWheel>", self.on_mousewheel)
         text_widget.bind("<Button-3>", self.show_context_menu)
 
         self.status_bar = ctk.CTkLabel(
             self.root,
             text="Готов к работе",
+            font=("Consolas", 12, "italic"),
             anchor="w",
             corner_radius=0
         )
-        self.status_bar.grid(row=3, column=0, sticky="ew", padx=10)
+        self.status_bar.grid(row=3, column=0, sticky="ew", padx=10, pady=5, columnspan=2)
+
+    def on_mousewheel(self, event):
+        """Обработка прокрутки колесиком мыши"""
+        if event.delta:
+            self.dialogue_area.yview("scroll", -1 * (event.delta // 120), "units")
+        else:
+            # Поддержка для Linux
+            if event.num == 4:
+                self.dialogue_area.yview("scroll", -1, "units")
+            elif event.num == 5:
+                self.dialogue_area.yview("scroll", 1, "units")
+        return "break"
 
     def create_context_menu(self):
-        self.context_menu = tk.Menu(self.root,
-                                    tearoff=0,
-                                    activebackground="#629618"
-                                    )
+        self.context_menu = tk.Menu(self.root, tearoff=0, activebackground="#629618")
         self.context_menu.add_command(
             label="Вырезать",
             command=self.cut_text,
@@ -174,9 +200,11 @@ class VoiceAssistantApp:
             self.root.clipboard_clear()
             self.root.clipboard_append(selected_text)
         elif widget == self.text_input._entry and widget.selection_present():
-            selected_text = widget.get()
+            start = widget.index(tk.SEL_FIRST)
+            end = widget.index(tk.SEL_LAST)
+            selected_text = widget.get()[start:end]
             self.root.clipboard_clear()
-            self.root.clipboard_append(selected_text[widget.index(tk.SEL_FIRST):widget.index(tk.SEL_LAST)])
+            self.root.clipboard_append(selected_text)
 
     def paste_text(self, event=None):
         widget = self.root.focus_get()
@@ -204,14 +232,14 @@ class VoiceAssistantApp:
             self.is_listening = True
             self.btn_listen.configure(text="Стоп записи")
             self.update_status("Слушаю...")
-            threading.Thread(target=self.voice_input).start()
+            threading.Thread(target=self.voice_input, daemon=True).start()
         else:
             self.is_listening = False
             self.btn_listen.configure(text="Старт записи")
             self.update_status("Готов к работе")
             self.speech.stop()
 
-    def voice_input(self):
+    def voice_input(self):  
         with sr.Microphone() as source:
             try:
                 audio = self.recognizer.listen(source, timeout=5)
@@ -232,7 +260,7 @@ class VoiceAssistantApp:
             self.on_close()
             return
 
-        threading.Thread(target=self.get_bot_response, args=(text,)).start()
+        threading.Thread(target=self.get_bot_response, args=(text,), daemon=True).start()
 
     def get_bot_response(self, text):
         response = self.conversation.get_response(text)

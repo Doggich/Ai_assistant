@@ -1,10 +1,11 @@
 from g4f.client import Client
+from behaviour import LUMI_PROFILE
 
 
 class Conversation:
     def __init__(self):
         self.client = Client()
-        self.history = [{"role": "system", "content": "You are a helpful assistant."}]
+        self.history = [{"role": "system", "content": LUMI_PROFILE}]
 
     def add_message(self, role, content):
         self.history.append({"role": role, "content": content})
