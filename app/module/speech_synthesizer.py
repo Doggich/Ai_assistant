@@ -1,14 +1,26 @@
 import threading
-import pyttsx3
+import io
+import wave
+import numpy as np
+import sounddevice as sd
+from silero_tts.silero_tts import SileroTTS
 
 
 class SpeechSynthesizer:
     def __init__(self, update_status_callback):
-        self.speech_engine = None
-        self.speech_thread = None
         self.update_status = update_status_callback
-        self.rate = 250
-        self.volume = 0.9
+        self.rate = 480   # It's not working yet
+        self.volume = 0.5
+        self.speech_thread = None
+        self.is_playing = False
+
+        self.tts_engine = SileroTTS(
+            model_id='v4_ru',
+            language='ru',
+            speaker='baya',
+            sample_rate=48000,
+            device='auto'
+        )
 
     def configure_voice(self, rate=None, volume=None):
         if rate is not None:
@@ -24,24 +36,35 @@ class SpeechSynthesizer:
         self.speech_thread.start()
 
     def _speak(self, text):
+        self.is_playing = True
         try:
-            self.speech_engine = pyttsx3.init()
-            self.speech_engine.setProperty('rate', self.rate)
-            self.speech_engine.setProperty('volume', self.volume)
-            self.speech_engine.say(text)
-            self.speech_engine.runAndWait()
+            audio_buffer = io.BytesIO()
+            self.tts_engine.tts(text, audio_buffer)
+            audio_buffer.seek(0)
+
+            with wave.open(audio_buffer, 'rb') as wav_file:
+                n_channels = wav_file.getnchannels()
+                framerate = wav_file.getframerate()
+                n_frames = wav_file.getnframes()
+                audio_bytes = wav_file.readframes(n_frames)
+
+            audio_numpy = np.frombuffer(audio_bytes, dtype=np.int16)
+
+            if self.volume != 1.0:
+                audio_float = audio_numpy.astype(np.float32) * self.volume
+                audio_numpy = np.clip(audio_float, -32768, 32767).astype(np.int16)
+
+            sd.play(audio_numpy, samplerate=framerate)
+            sd.wait()
+
         except Exception as e:
             self.update_status(f"Ошибка синтеза речи: {str(e)}")
         finally:
-            self.speech_engine = None
+            self.is_playing = False
 
     def stop(self):
-        if self.speech_engine:
-            try:
-                self.speech_engine.stop()
-            except Exception as e:
-                self.update_status(f"Ошибка остановки: {str(e)}")
-            self.speech_engine = None
+        sd.stop()
+        self.is_playing = False
 
         if self.speech_thread and self.speech_thread.is_alive():
             try:

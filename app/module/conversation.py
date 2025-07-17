@@ -1,5 +1,5 @@
 from g4f.client import Client
-from behaviour import LUMI_PROFILE
+from .behaviour import LUMI_PROFILE
 
 
 class Conversation:
